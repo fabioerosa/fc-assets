@@ -1,4 +1,281 @@
-﻿let tabs = [];
+﻿function _fcLoadScript(src) {
+  return new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+_fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js').then(function() {
+  return Promise.all([
+    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js'),
+    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js'),
+    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js'),
+    _fcLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js')
+  ]);
+});
+
+(function() {
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap';
+  document.head.appendChild(link);
+
+  var style = document.createElement('style');
+  style.textContent = '.fc-spinner-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,32,68,0.18);z-index:9999;backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity 0.18s}.fc-spinner-overlay.visible{opacity:1;pointer-events:all}.fc-spinner-box{background:#fff;border:1px solid #E4E9F4;border-radius:14px;padding:28px 36px;display:flex;flex-direction:column;align-items:center;gap:16px}.fc-spinner-ring{width:44px;height:44px;border:3.5px solid #E4E9F4;border-top-color:#2E6BF6;border-radius:50%;animation:fc-spin 0.75s linear infinite}@keyframes fc-spin{to{transform:rotate(360deg)}}.fc-spinner-label{font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:600;color:#0F2044}';
+  document.head.appendChild(style);
+
+  function injectSpinner() {
+    if (document.getElementById('fc-spinner')) return;
+    var d = document.createElement('div');
+    d.className = 'fc-spinner-overlay'; d.id = 'fc-spinner';
+    d.innerHTML = '<div class="fc-spinner-box"><div class="fc-spinner-ring"></div><div class="fc-spinner-label" id="fc-spinner-label">Aguarde...</div></div>';
+    document.body.appendChild(d);
+  }
+  if (document.body) injectSpinner();
+  else document.addEventListener('DOMContentLoaded', injectSpinner);
+})();
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCOxHe0CgD-HMSJPO0jd45IySroRDemnxM",
+  authDomain: "financeiro-f879a.firebaseapp.com",
+  projectId: "financeiro-f879a",
+  storageBucket: "financeiro-f879a.firebasestorage.app",
+  appId: "1:247501914666:web:cfe7f319b7dbb3fdc37953",
+  messagingSenderId: "247501914666"
+};
+
+window.FC = window.FC || {};
+window.FC.db      = window.FC.db      || null;
+window.FC.storage = window.FC.storage || null;
+window.FC.editId  = null;
+
+window.FC.showSpinner = function(label) {
+  var el = document.getElementById('fc-spinner');
+  var lb = document.getElementById('fc-spinner-label');
+  if (lb) lb.textContent = label || 'Aguarde...';
+  if (el) el.classList.add('visible');
+};
+window.FC.hideSpinner = function() {
+  var el = document.getElementById('fc-spinner');
+  if (el) el.classList.remove('visible');
+};
+
+window.FC._activeTabId = function() {
+  return typeof window.FC.getActiveTabId === 'function' ? window.FC.getActiveTabId() : 'default';
+};
+
+window.FC.init = async function() {
+  window.FC.showSpinner('Conectando...');
+  try {
+    if (!window.FC._skipAuth) {
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      window.FC.db      = firebase.firestore();
+      window.FC.storage = firebase.storage();
+    }
+    var tentativas = 0;
+    var tryLoad = async function() {
+      if (typeof window.fcLoadTabsFromFirestore === 'function') {
+        await window.fcLoadTabsFromFirestore();
+      } else if (tentativas < 30) {
+        tentativas++;
+        setTimeout(tryLoad, 100);
+      } else {
+        await window.FC.loadItems();
+      }
+    };
+    await tryLoad();
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.loadItems = async function() {
+  if (!window.FC.db) return;
+  var tabId = window.FC._activeTabId();
+  window.FC.showSpinner('Carregando...');
+  try {
+    var snapshot = await window.FC.db.collection('lancamentos').where('tabId', '==', tabId).get();
+    var items = snapshot.docs.map(function(doc) { return Object.assign({ id: doc.id }, doc.data()); });
+    items.sort(function(a, b) {
+      if (!a.vencimento) return 1;
+      if (!b.vencimento) return -1;
+      return new Date(a.vencimento) - new Date(b.vencimento);
+    });
+    window.dispatchEvent(new CustomEvent('fc:tab:loaded', { detail: { tabId, items } }));
+    window.dispatchEvent(new CustomEvent('fc:updated'));
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.handleSave = async function() {
+  var desc      = document.querySelector('.f-desc')?.value.trim();
+  var valorRaw  = document.querySelector('.f-value')?.value || '0';
+  var valor     = parseFloat(valorRaw.replace(/\./g, '').replace(',', '.'));
+  var date      = document.querySelector('.f-date')?.value;
+  var fileInput = document.querySelector('.f-file');
+  var files     = fileInput ? fileInput.files : [];
+  if (!desc || isNaN(valor) || !date) { alert('Preencha todos os campos.'); return; }
+  window.FC.showSpinner(window.FC.editId ? 'Atualizando...' : 'Salvando...');
+  try {
+    var novosAnexos = [];
+    for (var file of Array.from(files)) {
+      var ref    = window.FC.storage.ref('documentos/' + Date.now() + '_' + file.name);
+      var upload = await ref.put(file);
+      var url    = await upload.ref.getDownloadURL();
+      novosAnexos.push({ name: file.name, url });
+    }
+    var tabId = window.FC._activeTabId();
+    var data = { descricao: desc, valor, vencimento: date, tabId, ultimaAlteracao: firebase.firestore.FieldValue.serverTimestamp() };
+    if (window.FC.editId) {
+      delete data.tabId;
+      if (novosAnexos.length > 0) data.anexos = firebase.firestore.FieldValue.arrayUnion(...novosAnexos);
+      await window.FC.db.collection('lancamentos').doc(window.FC.editId).update(data);
+      window.FC.editId = null;
+      var btn = document.querySelector('.btn-add');
+      if (btn) btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg> Add';
+      var cancelBtn = document.getElementById('btn-cancel');
+      if (cancelBtn) cancelBtn.style.display = 'none';
+    } else {
+      data.anexos = novosAnexos;
+      data.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
+      await window.FC.db.collection('lancamentos').add(data);
+    }
+    if (document.querySelector('.f-desc'))  document.querySelector('.f-desc').value  = '';
+    if (document.querySelector('.f-value')) document.querySelector('.f-value').value = '';
+    if (document.querySelector('.f-date'))  document.querySelector('.f-date').value  = '';
+    if (typeof window.fcResetFileLabel === 'function') window.fcResetFileLabel();
+    if (window.FC.selected) window.FC.selected.clear();
+    await window.FC.loadItems();
+  } catch(err) {
+    console.error(err); alert('Erro ao salvar. Verifique o console.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.prepareEdit = function(id) {
+  var items = window.FC.items || [];
+  var item  = items.find(function(i) { return i.id === id; });
+  if (!item) return;
+  window.FC.editId = id;
+  if (document.querySelector('.f-desc'))  document.querySelector('.f-desc').value  = item.descricao  || '';
+  if (document.querySelector('.f-value')) document.querySelector('.f-value').value = item.valor      || '';
+  if (document.querySelector('.f-date'))  document.querySelector('.f-date').value  = item.vencimento || '';
+  var btn = document.querySelector('.btn-add');
+  if (btn) btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 10l2 2 8-8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Salvar edicao';
+  var cancelBtn = document.getElementById('btn-cancel');
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.FC.editSelected = function() {
+  if (!window.FC.selected || window.FC.selected.size !== 1) { alert('Selecione apenas um item para editar.'); return; }
+  window.FC.prepareEdit([...window.FC.selected][0]);
+};
+
+window.FC.deleteSelected = async function() {
+  if (!window.FC.selected?.size || !confirm('Excluir ' + window.FC.selected.size + ' lancamento(s)?')) return;
+  window.FC.showSpinner('Excluindo...');
+  try {
+    var items = window.FC.items || [];
+    for (var item of items.filter(function(i) { return window.FC.selected.has(i.id); })) {
+      for (var file of (item.anexos || [])) {
+        try { await window.FC.storage.refFromURL(file.url).delete(); } catch(e) {}
+      }
+      await window.FC.db.collection('lancamentos').doc(item.id).delete();
+    }
+    window.FC.selected.clear();
+    await window.FC.loadItems();
+  } catch(err) {
+    console.error(err); alert('Erro ao excluir. Verifique o console.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.deleteFile = async function(itemId, urlEnc, nameEnc) {
+  var url  = decodeURIComponent(urlEnc);
+  var name = decodeURIComponent(nameEnc);
+  if (!confirm('Excluir "' + name + '"?')) return;
+  window.FC.showSpinner('Removendo arquivo...');
+  try {
+    await window.FC.storage.refFromURL(url).delete();
+    var items = window.FC.items || [];
+    var item  = items.find(function(i) { return i.id === itemId; });
+    var novos = item.anexos.filter(function(f) { return f.url !== url; });
+    await window.FC.db.collection('lancamentos').doc(itemId).update({ anexos: novos });
+    await window.FC.loadItems();
+  } catch(err) {
+    console.error(err); alert('Erro ao remover arquivo.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.downloadSelected = async function() {
+  if (!window.FC.selected?.size) return alert('Nenhum item selecionado.');
+  var items        = window.FC.items || [];
+  var selecionados = items.filter(function(i) { return window.FC.selected.has(i.id); });
+  if (!selecionados.some(function(i) { return (i.anexos || []).length > 0; })) return alert('Os itens selecionados nao possuem anexos.');
+  window.FC.showSpinner('Gerando ZIP...');
+  try {
+    var zip    = new JSZip();
+    var folder = zip.folder('documentos');
+    for (var item of selecionados) {
+      for (var file of (item.anexos || [])) {
+        var blob = await fetch(file.url).then(function(r) { return r.blob(); });
+        folder.file(item.descricao + '_' + file.name, blob);
+      }
+    }
+    var content = await zip.generateAsync({ type: 'blob' });
+    var link2   = document.createElement('a');
+    link2.href  = URL.createObjectURL(content);
+    link2.download = 'documentos.zip';
+    link2.click();
+  } catch(err) {
+    console.error(err); alert('Erro ao gerar o ZIP.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.FC.calcMetrics = function() {
+  var hoje = new Date();
+  var m = hoje.getMonth(), y = hoje.getFullYear();
+  var pm = (m + 1) % 12, py = m === 11 ? y + 1 : y;
+  var atual = 0, proximo = 0;
+  var items = window.FC.items || [];
+  items.forEach(function(it) {
+    if (!it.vencimento) return;
+    var parts  = it.vencimento.split('-').map(Number);
+    var dMonth = parts[1] - 1;
+    if (dMonth === m  && parts[0] === y)  atual   += Number(it.valor || 0);
+    if (dMonth === pm && parts[0] === py) proximo += Number(it.valor || 0);
+  });
+  return { atual, proximo, total: items.length };
+};
+
+window.addEventListener('fc:tab:switched', async function() {
+  await window.FC.loadItems();
+});
+
+window.toggleSelect     = function() { return window.FC.toggleSelect?.apply(window.FC, arguments); };
+window.toggleSelectAll  = function() { return window.FC.toggleSelectAll?.apply(window.FC, arguments); };
+window.editSelected     = function() { return window.FC.editSelected(); };
+window.deleteSelected   = function() { return window.FC.deleteSelected(); };
+window.downloadSelected = function() { return window.FC.downloadSelected(); };
+window.deleteFile       = function() { return window.FC.deleteFile.apply(window.FC, arguments); };
+
+function fcCoreInit() {
+  if (typeof firebase === 'undefined') { return setTimeout(fcCoreInit, 100); }
+  if (window.FC._authReady) return;
+  if (document.getElementById('fc-auth-overlay')) return;
+  window.FC.init();
+}
+document.addEventListener('DOMContentLoaded', fcCoreInit);
+
+let tabs = [];
 let activeTabId = null;
 let ctxTargetId = null;
 let tabCounter = 0;
