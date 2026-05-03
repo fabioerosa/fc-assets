@@ -1074,16 +1074,27 @@ window.addEventListener('tel:edit', function(e) {
   }
 });
 
-// Carrega chips após autenticação
+// Carrega chips após autenticação (evento)
 window.addEventListener('fc:auth:granted', function() {
   window.TEL.loadItems();
 });
 
-// Carrega chips ao navegar para a seção (lazy, caso já autenticado)
+// Polling como fallback — caso fc:auth:granted já tenha disparado antes deste listener
+function _telPollAndLoad() {
+  if (window.TEL._loaded) return;
+  if (window.FC && window.FC.db && window.FC._authReady) {
+    window.TEL.loadItems();
+  } else {
+    setTimeout(_telPollAndLoad, 300);
+  }
+}
+document.addEventListener('DOMContentLoaded', function() { setTimeout(_telPollAndLoad, 500); });
+
+// Carrega chips ao navegar para a seção (garante carregar mesmo se polling falhou)
 var _origFcNavSwitch = window.fcNavSwitch;
 window.fcNavSwitch = function(section, btn) {
   if (typeof _origFcNavSwitch === 'function') _origFcNavSwitch(section, btn);
-  if (section === 'telefonia' && !window.TEL._loaded && window.FC && window.FC.db) {
+  if (section === 'telefonia' && window.FC && window.FC.db) {
     window.TEL.loadItems();
   }
 };
