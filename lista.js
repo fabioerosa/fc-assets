@@ -989,22 +989,27 @@ window.TEL._loaded = false;
 window.TEL.editId  = null;
 
 window.TEL.loadItems = async function() {
-  if (!window.FC.db) return;
+  if (!window.FC.db) { console.warn('[TEL] db não disponível'); return; }
+  console.log('[TEL] carregando chips...');
   window.FC.showSpinner('Carregando chips...');
   try {
-    const snap = await window.FC.db.collection('chips').orderBy('numero').get();
+    const snap = await window.FC.db.collection('chips').get();
+    console.log('[TEL] chips carregados:', snap.size);
     window.telItems = snap.docs.map(function(doc) { return Object.assign({ id: doc.id }, doc.data()); });
+    window.telItems.sort(function(a,b){ return String(a.numero||'').localeCompare(String(b.numero||''),'pt-BR'); });
     window.TEL._loaded = true;
     if (typeof telRender === 'function') telRender();
   } catch(e) {
-    console.error('Erro ao carregar chips:', e);
+    console.error('[TEL] erro ao carregar chips:', e.code, e.message);
+    alert('Erro ao carregar chips: ' + e.message);
   } finally {
     window.FC.hideSpinner();
   }
 };
 
 window.TEL.saveItem = async function(data, id) {
-  if (!window.FC.db) return;
+  if (!window.FC.db) { alert('[TEL] db não disponível. Tente recarregar.'); return; }
+  console.log('[TEL] salvando chip:', data, 'id:', id);
   window.FC.showSpinner(id ? 'Atualizando...' : 'Salvando...');
   try {
     if (id) {
@@ -1016,11 +1021,12 @@ window.TEL.saveItem = async function(data, id) {
         Object.assign({}, data, { criadoEm: firebase.firestore.FieldValue.serverTimestamp() })
       );
     }
+    console.log('[TEL] chip salvo com sucesso');
     window.TEL.editId = null;
     await window.TEL.loadItems();
   } catch(e) {
-    console.error('Erro ao salvar chip:', e);
-    alert('Erro ao salvar. Verifique o console.');
+    console.error('[TEL] erro ao salvar chip:', e.code, e.message);
+    alert('Erro ao salvar: ' + e.message);
   } finally {
     window.FC.hideSpinner();
   }
