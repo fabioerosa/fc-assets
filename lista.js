@@ -1,19 +1,4 @@
-﻿function _fcLoadScript(src) {
-  return new Promise(function(resolve, reject) {
-    var s = document.createElement('script');
-    s.src = src; s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-_fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js').then(function() {
-  return Promise.all([
-    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js'),
-    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js'),
-    _fcLoadScript('https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js'),
-    _fcLoadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js')
-  ]);
-});
-
+﻿
 (function() {
   var link = document.createElement('link');
   link.rel = 'stylesheet';
