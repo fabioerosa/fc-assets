@@ -982,3 +982,108 @@ activeTabId = 'tab_init';
 fcRenderTabBar();
 fcRenderTable();
 })();
+
+// ─── MÓDULO TELEFONIA ─────────────────────────────────────────────
+window.TEL = window.TEL || {};
+window.TEL._loaded = false;
+window.TEL.editId  = null;
+
+window.TEL.loadItems = async function() {
+  if (!window.FC.db) return;
+  window.FC.showSpinner('Carregando chips...');
+  try {
+    const snap = await window.FC.db.collection('chips').orderBy('numero').get();
+    window.telItems = snap.docs.map(function(doc) { return Object.assign({ id: doc.id }, doc.data()); });
+    window.TEL._loaded = true;
+    if (typeof telRender === 'function') telRender();
+  } catch(e) {
+    console.error('Erro ao carregar chips:', e);
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.TEL.saveItem = async function(data, id) {
+  if (!window.FC.db) return;
+  window.FC.showSpinner(id ? 'Atualizando...' : 'Salvando...');
+  try {
+    if (id) {
+      await window.FC.db.collection('chips').doc(id).update(
+        Object.assign({}, data, { ultimaAlteracao: firebase.firestore.FieldValue.serverTimestamp() })
+      );
+    } else {
+      await window.FC.db.collection('chips').add(
+        Object.assign({}, data, { criadoEm: firebase.firestore.FieldValue.serverTimestamp() })
+      );
+    }
+    window.TEL.editId = null;
+    await window.TEL.loadItems();
+  } catch(e) {
+    console.error('Erro ao salvar chip:', e);
+    alert('Erro ao salvar. Verifique o console.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.TEL.deleteItems = async function(ids) {
+  if (!window.FC.db || !ids.length) return;
+  window.FC.showSpinner('Excluindo...');
+  try {
+    const batch = window.FC.db.batch();
+    ids.forEach(function(id) { batch.delete(window.FC.db.collection('chips').doc(id)); });
+    await batch.commit();
+    window.telSelected.clear();
+    await window.TEL.loadItems();
+  } catch(e) {
+    console.error('Erro ao excluir chips:', e);
+    alert('Erro ao excluir. Verifique o console.');
+  } finally {
+    window.FC.hideSpinner();
+  }
+};
+
+window.TEL.toggleAtivo = async function(id) {
+  if (!window.FC.db) return;
+  const item = (window.telItems || []).find(function(i) { return i.id === id; });
+  if (!item) return;
+  const novo = !item.ativo;
+  item.ativo = novo;
+  if (typeof telRender === 'function') telRender();
+  try {
+    await window.FC.db.collection('chips').doc(id).update({ ativo: novo });
+  } catch(e) {
+    item.ativo = !novo;
+    if (typeof telRender === 'function') telRender();
+    console.error('Erro ao atualizar status:', e);
+  }
+};
+
+// Eventos disparados pelo HTML
+window.addEventListener('tel:delete', async function(e) {
+  var ids = (e.detail && e.detail.ids) || [];
+  await window.TEL.deleteItems(ids);
+});
+
+window.addEventListener('tel:edit', function(e) {
+  var id = e.detail && e.detail.id;
+  var item = (window.telItems || []).find(function(i) { return i.id === id; });
+  if (item) {
+    window.TEL.editId = id;
+    window.dispatchEvent(new CustomEvent('tel:edit:open', { detail: item }));
+  }
+});
+
+// Carrega chips após autenticação
+window.addEventListener('fc:auth:granted', function() {
+  window.TEL.loadItems();
+});
+
+// Carrega chips ao navegar para a seção (lazy, caso já autenticado)
+var _origFcNavSwitch = window.fcNavSwitch;
+window.fcNavSwitch = function(section, btn) {
+  if (typeof _origFcNavSwitch === 'function') _origFcNavSwitch(section, btn);
+  if (section === 'telefonia' && !window.TEL._loaded && window.FC && window.FC.db) {
+    window.TEL.loadItems();
+  }
+};
