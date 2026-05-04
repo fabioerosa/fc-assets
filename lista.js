@@ -869,7 +869,7 @@ if (!t) { tbody.innerHTML=''; if(empty) empty.style.display='block'; if(badge) b
 if (!t.items) t.items = [];
 if (badge) badge.textContent = `${t.items.length} registro${t.items.length!==1?'s':''}`;
 const items = fcSortedItems();
-if (!items.length) { tbody.innerHTML=''; if(empty) empty.style.display='block'; return; }
+if (!items.length) { tbody.innerHTML=''; if(empty) empty.style.display='block'; fcRenderCards(); return; }
 if (empty) empty.style.display = 'none';
 tbody.innerHTML = items.map(item => {
 const over = fcIsOverdue(item.vencimento) && !item.pago;
