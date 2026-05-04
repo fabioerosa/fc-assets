@@ -1116,3 +1116,255 @@ window.fcNavSwitch = function(section, btn) {
     window.TEL.loadItems();
   }
 };
+
+function telOpenModal() {
+  document.getElementById('tel-modal-overlay').classList.add('open');
+  setTimeout(function(){ document.getElementById('tel-f-numero').focus(); }, 150);
+}
+function telCloseModal() {
+  document.getElementById('tel-modal-overlay').classList.remove('open');
+}
+function telHandleSave() {
+  var numero = document.getElementById('tel-f-numero').value.trim();
+  var tipo   = document.getElementById('tel-f-tipo').value;
+  var data   = document.getElementById('tel-f-data').value;
+  var valor  = parseFloat(document.getElementById('tel-f-valor').value) || 0;
+  var ativo  = document.getElementById('tel-f-ativo').checked;
+  if (!numero) { alert('Informe o número do chip.'); return; }
+  if (window.TEL && typeof window.TEL.saveItem === 'function') {
+    window.TEL.saveItem({ numero, tipo, dataRecarga: data, valorRecarga: valor, ativo }, window.TEL ? window.TEL.editId : null);
+  }
+  telResetForm();
+  telCloseModal();
+}
+function telResetForm() {
+  document.getElementById('tel-f-numero').value = '';
+  document.getElementById('tel-f-tipo').value   = 'pre';
+  document.getElementById('tel-f-data').value   = '';
+  document.getElementById('tel-f-valor').value  = '';
+  document.getElementById('tel-f-ativo').checked = true;
+  document.getElementById('tel-btn-cancel').style.display = 'none';
+  document.getElementById('tel-form-title').textContent   = 'Novo chip';
+  if (window.TEL) window.TEL.editId = null;
+}
+function telCancelEdit() { telResetForm(); telCloseModal(); }
+window.addEventListener('tel:edit:open', function(e) {
+  var it = e.detail;
+  document.getElementById('tel-f-numero').value  = it.numero       || '';
+  document.getElementById('tel-f-tipo').value    = it.tipo         || 'pre';
+  document.getElementById('tel-f-data').value    = it.dataRecarga  || '';
+  document.getElementById('tel-f-valor').value   = it.valorRecarga || '';
+  document.getElementById('tel-f-ativo').checked = it.ativo !== false;
+  document.getElementById('tel-btn-cancel').style.display = 'inline-flex';
+  document.getElementById('tel-form-title').textContent   = 'Editando: ' + (it.numero || '');
+  telOpenModal();
+});
+function fcNavSwitch(section, btn) {
+  document.querySelectorAll('.fc-section').forEach(function(s) { s.classList.remove('active'); });
+  document.getElementById('fc-section-' + section).classList.add('active');
+  document.querySelectorAll('.fc-nav-item').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+window.telItems = []; window.telSelected = new Set(); window.telSortField = null; window.telSortDir = 'asc';
+function telToggleAll(v) { window.telSelected.clear(); document.querySelectorAll('#tel-tbody [data-id]').forEach(function(cb){cb.checked=v;if(v)window.telSelected.add(cb.dataset.id);}); telUpdateBulkBar(); }
+function telToggleSelect(id,v) { if(v)window.telSelected.add(id);else window.telSelected.delete(id); telUpdateBulkBar(); }
+function telUpdateBulkBar() { var n=window.telSelected.size; var bar=document.getElementById('tel-bulk-bar'); if(bar)bar.classList.toggle('visible',n>0); var c=document.getElementById('tel-bulk-count'); if(c)c.textContent=n+' selecionado'+(n!==1?'s':''); var b=document.getElementById('tel-btn-edit'); if(b)b.style.display=n===1?'inline-flex':'none'; }
+function telSort(f) { window.telSortDir=(window.telSortField===f&&window.telSortDir==='asc')?'desc':'asc'; window.telSortField=f; telRender(); }
+function telEditSelected() { if(window.telSelected.size!==1)return; window.dispatchEvent(new CustomEvent('tel:edit',{detail:{id:[...window.telSelected][0]}})); }
+window.fcConfirm=function(m){return new Promise(function(r){var p=document.getElementById('fc-confirm-pop');if(p.parentNode!==document.body)document.body.appendChild(p);document.getElementById('fc-confirm-msg').textContent=m;p.classList.add('open');function c(v){p.classList.remove('open');r(v);}document.getElementById('fc-confirm-ok').addEventListener('click',function(){c(true);},{once:true});document.getElementById('fc-confirm-cancel').addEventListener('click',function(){c(false);},{once:true});});};
+async function telDeleteSelected(){if(!window.telSelected.size)return;if(!await window.fcConfirm('Excluir '+window.telSelected.size+' item(ns)?'))return;window.dispatchEvent(new CustomEvent('tel:delete',{detail:{ids:[...window.telSelected]}}));}
+function telRender() {
+  var tbody=document.getElementById('tel-tbody'); var empty=document.getElementById('tel-empty'); var badge=document.getElementById('tel-count-badge'); var cards=document.getElementById('tel-cards');
+  var items=[...window.telItems];
+  if(badge)badge.textContent=items.length+' registro'+(items.length!==1?'s':'');
+  if(window.telSortField){items.sort(function(a,b){var va=a[window.telSortField]||'',vb=b[window.telSortField]||'';if(window.telSortField==='valorRecarga'){return window.telSortDir==='asc'?(parseFloat(va)||0)-(parseFloat(vb)||0):(parseFloat(vb)||0)-(parseFloat(va)||0);}return window.telSortDir==='asc'?String(va).localeCompare(String(vb),'pt-BR'):String(vb).localeCompare(String(va),'pt-BR');});}
+  if(!items.length){if(tbody)tbody.innerHTML='';if(cards)cards.innerHTML='';if(empty)empty.style.display='block';return;}
+  if(empty)empty.style.display='none';
+  var fcFmt=function(v){var n=parseFloat(v);return isNaN(n)?'—':n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});};
+  var fmtDate=function(s){if(!s)return'—';var p=s.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:s;};
+  var fmtPhone=function(n){var d=String(n||'').replace(/\D/g,'');if(d.length===11)return'('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);if(d.length===10)return'('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);return n||'';};
+  var isRecargaVencida=function(s){if(!s)return false;var limite=new Date();limite.setDate(limite.getDate()-30);return new Date(s)<limite;};
+  var toggleBtn=function(it,ativo){return '<button class="btn-pago '+(ativo?'pago':'')+'" onclick="window.TEL&&window.TEL.toggleAtivo(\''+it.id+'\')" title="'+(ativo?'Clique para desativar':'Clique para ativar')+'"><svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>';};
+  if(tbody)tbody.innerHTML=items.map(function(it){
+    var ativo=it.ativo!==false;
+    var vencida=isRecargaVencida(it.dataRecarga);
+    var alerta=!ativo||vencida;
+    var rowClass=alerta?'overdue':'';
+    return '<tr class="'+rowClass+'">'
+      +'<td><input type="checkbox" data-id="'+it.id+'" onchange="telToggleSelect(this.dataset.id,this.checked)"'+(window.telSelected.has(it.id)?' checked':'')+'></td>'
+      +'<td class="td-desc">'+(alerta?'<span class="overdue-badge">!</span>':'')+'<span class="td-desc-text" style="font-family:\'DM Mono\',monospace;font-weight:600">'+fmtPhone(it.numero)+'</span></td>'
+      +'<td><span class="tel-badge '+(it.tipo==='pos'?'tel-badge-pos':'tel-badge-pre')+'">'+(it.tipo==='pos'?'Pós-pago':'Pré-pago')+'</span></td>'
+      +'<td style="text-align:center">'+toggleBtn(it,ativo)+'</td>'
+      +'<td><span class="td-date '+(vencida?'date-overdue':'date-ok')+'">'+fmtDate(it.dataRecarga)+'</span></td>'
+      +'<td class="td-value">R$ '+fcFmt(it.valorRecarga)+'</td>'
+      +'</tr>';
+  }).join('');
+  if(cards)cards.innerHTML=items.map(function(it){
+    var ativo=it.ativo!==false;
+    var vencida=isRecargaVencida(it.dataRecarga);
+    var alerta=!ativo||vencida;
+    return '<div class="fc-card'+(alerta?' overdue':'')+'">'
+      +'<div class="fc-card-header">'
+      +'<input type="checkbox" data-id="'+it.id+'" onchange="telToggleSelect(this.dataset.id,this.checked)"'+(window.telSelected.has(it.id)?' checked':'')+'>'
+      +'<div class="fc-card-title"><span style="font-family:\'DM Mono\',monospace;font-size:14px;font-weight:700;color:#0F2044">'+fmtPhone(it.numero)+'</span></div>'
+      +'<div style="display:inline-flex;align-items:center;gap:4px">'+(alerta?'<span class="overdue-badge">!</span>':'')+toggleBtn(it,ativo)+'</div>'
+      +'</div>'
+      +'<div class="tel-card-badges" style="padding-left:23px">'
+      +'<span class="tel-badge '+(it.tipo==='pos'?'tel-badge-pos':'tel-badge-pre')+'">'+(it.tipo==='pos'?'Pós-pago':'Pré-pago')+'</span>'
+      +'</div>'
+      +'<div class="fc-card-meta" style="padding-left:23px"><span class="fc-card-value">R$ '+fcFmt(it.valorRecarga)+'</span><span class="td-date '+(vencida?'date-overdue':'date-ok')+'" style="display:inline-flex;flex-direction:column;gap:1px;line-height:1.4"><span style="font-size:11px;font-weight:700;opacity:0.7;text-transform:uppercase;letter-spacing:0.05em">Última recarga</span>'+fmtDate(it.dataRecarga)+'</span></div>'
+      +'</div>';
+  }).join('');
+}
+document.addEventListener('DOMContentLoaded', telRender);
+(function(){
+  ['tel-modal-overlay','fc-modal-overlay'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)document.body.appendChild(el);
+  });
+})();
+function fcToggleMobTab(e) {
+  e.stopPropagation();
+  var menu=document.getElementById('fc-mob-tab-menu');
+  if(!menu)return;
+  menu.innerHTML='';
+  document.querySelectorAll('#tab-bar .tab-item').forEach(function(tab){
+    var inp=tab.querySelector('.tab-label-input');
+    var name=inp?(inp.value||inp.placeholder||'Aba'):'Aba';
+    var tabId=tab.dataset.id;
+    var isActive=tab.classList.contains('active');
+    var item=document.createElement('div');
+    item.className='fc-mob-tab-item'+(isActive?' active':'');
+    item.style.cssText='display:flex;align-items:center;gap:8px';
+    item.onclick=function(){tab.click();fcCloseMobTabMenu();};
+    var nameEl=document.createElement('span');
+    nameEl.textContent=name;
+    nameEl.style.flex='1';
+    var delBtn=document.createElement('button');
+    delBtn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    delBtn.style.cssText='background:none;border:none;cursor:pointer;color:#C0C8DC;padding:4px;display:flex;align-items:center;flex-shrink:0;border-radius:5px;transition:color 0.15s,background 0.15s';
+    delBtn.onmouseenter=function(){this.style.color='#D84040';this.style.background='#FEF0F0';};
+    delBtn.onmouseleave=function(){this.style.color='#C0C8DC';this.style.background='none';};
+    delBtn.onclick=function(ev){
+      ev.stopPropagation();
+      fcCloseMobTabMenu();
+      if(typeof fcDeleteTab==='function')fcDeleteTab(tabId);
+    };
+    item.appendChild(nameEl);
+    item.appendChild(delBtn);
+    menu.appendChild(item);
+  });
+  menu.classList.toggle('open');
+}
+function fcCloseMobTabMenu(){var m=document.getElementById('fc-mob-tab-menu');if(m)m.classList.remove('open');}
+function fcUpdateMobTabLabel(){
+  var label=document.getElementById('fc-mob-tab-label');if(!label)return;
+  var active=document.querySelector('#tab-bar .tab-item.active .tab-label-input');
+  label.textContent=active?(active.value||'Aba'):'Aba';
+}
+document.addEventListener('click',fcCloseMobTabMenu);
+(function(){
+  var bar=document.getElementById('tab-bar');if(!bar)return;
+  new MutationObserver(fcUpdateMobTabLabel).observe(bar,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  bar.addEventListener('input',fcUpdateMobTabLabel);
+})();
+function fcToggleAddMenu(e) {
+  e.stopPropagation();
+  document.getElementById('fc-add-menu').classList.toggle('open');
+}
+function fcCloseAddMenu() {
+  var m = document.getElementById('fc-add-menu');
+  if (m) m.classList.remove('open');
+}
+document.addEventListener('click', fcCloseAddMenu);
+function fcOpenModal() {
+  document.getElementById('fc-modal-overlay').classList.add('open');
+  setTimeout(function(){ var d=document.querySelector('.f-desc');if(d)d.focus(); },150);
+}
+function fcCloseModal() {
+  document.getElementById('fc-modal-overlay').classList.remove('open');
+}
+function fcUpdateFileLabel(input) {
+  var label=document.querySelector('.f-file-text');if(!label)return;
+  var MAX=20,trunc=function(s){return s.length>MAX?s.slice(0,MAX)+'…':s;};
+  if(!input.files||!input.files.length){label.textContent='Escolher arquivos';}
+  else if(input.files.length===1){label.textContent=trunc(input.files[0].name);}
+  else{label.textContent=input.files.length+' arquivos selecionados';}
+}
+function fcResetFileLabel() {
+  var label=document.querySelector('.f-file-text'),input=document.querySelector('.f-file');
+  if(label)label.textContent='Escolher arquivos';if(input)input.value='';
+}
+window.fcResetFileLabel=fcResetFileLabel;
+function fcCancelEdit() {
+  var desc=document.querySelector('.f-desc'),val=document.querySelector('.f-value'),dt=document.querySelector('.f-date');
+  if(desc)desc.value='';if(val)val.value='';if(dt)dt.value='';
+  fcResetFileLabel();
+  var btn=document.querySelector('.btn-add');
+  if(btn)btn.innerHTML='<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg> Add';
+  var cancel=document.getElementById('btn-cancel');if(cancel)cancel.style.display='none';
+  var title=document.getElementById('fc-modal-title');if(title)title.textContent='Nova conta';
+  if(window.FC){window.FC.editId=null;if(window.FC.selected)window.FC.selected.clear();window.dispatchEvent(new CustomEvent('fc:updated'));}
+  fcCloseModal();
+}
+window.addEventListener('fc:updated',function(){fcResetFileLabel();});
+window.addEventListener('fc:edit',function(e){
+  var item=e.detail;if(!item)return;
+  if(window.FC)window.FC.editId=item.id;
+  var desc=document.querySelector('.f-desc'),val=document.querySelector('.f-value'),dt=document.querySelector('.f-date');
+  if(desc)desc.value=item.descricao||'';
+  if(val)val.value=item.valor?Number(item.valor).toLocaleString('pt-BR',{minimumFractionDigits:2}):'';
+  if(dt)dt.value=window.fcDateFromISO?window.fcDateFromISO(item.vencimento||''):'';
+  var btn=document.querySelector('.btn-add');
+  if(btn)btn.innerHTML='<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 10l2 2 8-8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Salvar edição';
+  var cancel=document.getElementById('btn-cancel');if(cancel)cancel.style.display='inline-flex';
+  var title=document.getElementById('fc-modal-title');if(title)title.textContent='Editando lançamento';
+  fcOpenModal();
+});
+(function(){
+  function applyDateMask(e){
+    var v=e.target.value.replace(/\D/g,'');
+    if(v.length>8)v=v.slice(0,8);
+    if(v.length>=5)v=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+    else if(v.length>=3)v=v.slice(0,2)+'/'+v.slice(2);
+    e.target.value=v;
+  }
+  window.fcDateToISO=function(str){
+    if(!str)return'';if(/^\d{4}-\d{2}-\d{2}$/.test(str))return str;
+    var parts=str.split('/');if(parts.length!==3)return'';
+    var d=parts[0],m=parts[1],y=parts[2];
+    if(!d||!m||!y||y.length!==4)return'';
+    return y+'-'+(m.length<2?'0'+m:m)+'-'+(d.length<2?'0'+d:d);
+  };
+  window.fcDateFromISO=function(str){
+    if(!str)return'';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(str)){var p=str.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+    return str;
+  };
+  var fdate=document.querySelector('.f-date');
+  if(fdate){
+    fdate.addEventListener('input',applyDateMask);
+    fdate.addEventListener('keydown',function(e){if(e.key==='Backspace'&&fdate.value.endsWith('/')){fdate.value=fdate.value.slice(0,-1);e.preventDefault();}});
+  }
+  document.querySelectorAll('.f-desc,.f-value,.f-date').forEach(function(inp){
+    inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();window.FC&&window.FC.handleSave();}});
+  });
+  var patchSave=function(){
+    if(!window.FC||!window.FC.handleSave)return setTimeout(patchSave,100);
+    var origSave=window.FC.handleSave;
+    window.FC.handleSave=async function(){
+      var input=document.querySelector('.f-date');
+      if(input){
+        var iso=window.fcDateToISO(input.value);
+        if(input.value&&!iso){alert('Data inválida. Use o formato dd/mm/aaaa.');return;}
+        input.value=iso;
+        await origSave.call(this);
+        input.value='';
+      }else{
+        await origSave.call(this);
+      }
+      fcCloseModal();
+    };
+  };
+  patchSave();
+})();
