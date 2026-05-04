@@ -730,6 +730,11 @@ const th = document.getElementById('th-' + f); if (!th) return;
 th.classList.remove('sort-asc','sort-desc');
 if (t && t.sortField === f) th.classList.add(t.sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
 });
+const thStatus = document.getElementById('th-status');
+if (thStatus) {
+thStatus.classList.remove('sort-asc','sort-desc');
+if (t && t.sortField === 'pago') thStatus.classList.add(t.sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+}
 }
 function fcSortedItems() {
 const t = fcActiveTab(); if (!t) return [];
@@ -745,6 +750,11 @@ return t.sortDir === 'asc' ? (parseFloat(a.valor)||0)-(parseFloat(b.valor)||0) :
 }
 if (t.sortField === 'vencimento') {
 return t.sortDir === 'asc' ? fcParseDate(a.vencimento)-fcParseDate(b.vencimento) : fcParseDate(b.vencimento)-fcParseDate(a.vencimento);
+}
+if (t.sortField === 'pago') {
+return t.sortDir === 'asc'
+? (a.pago === b.pago ? 0 : a.pago ? 1 : -1)
+: (a.pago === b.pago ? 0 : a.pago ? -1 : 1);
 }
 return 0;
 });
