@@ -160,7 +160,8 @@ window.FC.editSelected = function() {
 };
 
 window.FC.deleteSelected = async function() {
-  if (!window.FC.selected?.size || !confirm('Excluir ' + window.FC.selected.size + ' lancamento(s)?')) return;
+  if (!window.FC.selected?.size) return;
+  if (!await window.fcConfirm('Excluir ' + window.FC.selected.size + ' lancamento(s)?')) return;
   window.FC.showSpinner('Excluindo...');
   try {
     var items = window.FC.items || [];
@@ -182,7 +183,7 @@ window.FC.deleteSelected = async function() {
 window.FC.deleteFile = async function(itemId, urlEnc, nameEnc) {
   var url  = decodeURIComponent(urlEnc);
   var name = decodeURIComponent(nameEnc);
-  if (!confirm('Excluir "' + name + '"?')) return;
+  if (!await window.fcConfirm('Excluir "' + name + '"?')) return;
   window.FC.showSpinner('Removendo arquivo...');
   try {
     await window.FC.storage.refFromURL(url).delete();
@@ -313,7 +314,7 @@ async function fcDeleteTab(id) {
 if (tabs.length === 1) { alert('Deve haver ao menos uma aba.'); return; }
 const t = fcGetTab(id);
 const nome = t ? `"${t.label}"` : 'esta aba';
-if (!confirm(`Excluir ${nome}?\n\nOs lançamentos desta aba não serão excluídos, apenas a aba.`)) return;
+if (!await window.fcConfirm(`Excluir ${nome}? Os lançamentos não serão excluídos, apenas a aba.`)) return;
 const idx = tabs.findIndex(t => t.id === id);
 tabs.splice(idx, 1);
 if (activeTabId === id) activeTabId = tabs[Math.max(0, idx - 1)].id;
