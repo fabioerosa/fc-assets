@@ -292,6 +292,7 @@ const wrap = document.getElementById('table-wrap');
 wrap.classList.add('tab-switching');
 setTimeout(() => {
 activeTabId = id;
+const _t = fcActiveTab(); if (_t) _t.items = [];
 fcRenderTabBar();
 fcUpdateSortHeaders();
 fcRenderTable();
